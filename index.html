@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>三明学院 - 服装与服饰设计 3D交互课程星系 + 侧边栏</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; overflow: hidden; background-color: #03040b; font-family: "Microsoft YaHei", sans-serif; }
+
+        /* ===== 3D 文字标签 ===== */
+        .node-label {
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(10, 20, 40, 0.8);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+            text-align: center;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            white-space: nowrap;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .node-title { font-size: 13px; font-weight: bold; color: #e0f7fa; }
+        .node-desc { font-size: 10px; color: #80cbc4; margin-top: 2px; }
+
+        .c-root { border-color: #ffeb3b; box-shadow: 0 0 20px rgba(255, 235, 59, 0.5); }
+        .c-base { border-color: #00e5ff; }
+        .c-core { border-color: #4facfe; }
+        .c-fashion { border-color: #ff4081; }
+        .c-shoes { border-color: #b388ff; }
+        .c-practice { border-color: #ff9800; }
+
+        /* ===== 顶部提示 ===== */
+        #ui-tip {
+            position: absolute; top: 20px; left: 0; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.6); font-size: 15px; letter-spacing: 2px;
+            pointer-events: none; z-index: 100;
+        }
+
+        /* ===== 侧边栏 ===== */
+        #sidebar {
+            position: fixed;
+            top: 0; right: 0;
+            width: 360px;
+            height: 100vh;
+            background: rgba(6, 12, 24, 0.92);
+            backdrop-filter: blur(12px);
+            border-left: 1px solid rgba(0, 200, 255, 0.25);
+            box-shadow: -4px 0 24px rgba(0, 0, 0, 0.6);
+            color: #d7f0ff;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            font-size: 13px;
+            transition: transform 0.35s ease;
+        }
+        #sidebar.hidden { transform: translateX(100%); }
+
+        #sidebar-header {
+            padding: 16px 18px 12px;
+            border-bottom: 1px solid rgba(0, 200, 255, 0.15);
+            flex-shrink: 0;
+        }
+        #sidebar-header h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #8be9fd;
+            letter-spacing: 1px;
+        }
+        #sidebar-header p {
+            margin: 6px 0 0;
+            font-size: 11px;
+            color: #5f8aa8;
+        }
+
+        #sidebar-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 12px 24px;
+        }
+        #sidebar-body::-webkit-scrollbar { width: 5px; }
+        #sidebar-body::-webkit-scrollbar-thumb { background: rgba(0, 200, 255, 0.3); border-radius: 4px; }
+
+        .empty-hint {
+            padding: 40px 10px;
+            text-align: center;
+            color: #3a5a70;
+            font-size: 12px;
+            line-height: 1.8;
+        }
+
+        /* 侧边栏条目 */
+        .sb-node {
+            margin-bottom: 6px;
+            border-radius: 8px;
+            background: rgba(15, 30, 50, 0.6);
+            border: 1px solid rgba(0, 180, 255, 0.12);
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .sb-node.active-parent { border-color: rgba(0, 220, 255, 0.45); }
+
+        .sb-row {
+            display: flex;
+            align-items: center;
+            padding: 9px 12px;
+            cursor: pointer;
+            gap: 8px;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .sb-row:hover { background: rgba(0, 180, 255, 0.08); }
+
+        .sb-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .sb-name {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 500;
+            color: #c8e6f8;
+        }
+        .sb-credit {
+            font-size: 10px;
+            color: #5a8da8;
+            flex-shrink: 0;
+            margin-right: 4px;
+        }
+        .sb-toggle {
+            width: 18px; height: 18px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 4px;
+            background: rgba(0, 180, 255, 0.12);
+            color: #6ac8f0;
+            font-size: 11px;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .sb-toggle:hover { background: rgba(0, 220, 255, 0.25); }
+
+        /* 子节点资料区 */
+        .sb-detail {
+            display: none;
+            padding: 4px 12px 10px 30px;
+            border-top: 1px dashed rgba(0, 180, 255, 0.12);
+        }
+        .sb-node.expanded .sb-detail { display: block; }
+        .sb-node.expanded > .sb-row .sb-toggle { background: rgba(0, 220, 255, 0.35); }
+
+        .sb-desc {
+            font-size: 11px;
+            color: #7fb3cc;
+            line-height: 1.65;
+            margin-bottom: 6px;
+        }
+        .sb-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+        .sb-tag {
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 10px;
+            background: rgba(0, 150, 255, 0.1);
+            color: #6ac8f0;
+            border: 1px solid rgba(0, 180, 255, 0.15);
+        }
+
+        /* 子课程条目（最内层资料） */
+        .sb-leaf {
+            padding: 6px 0 4px 6px;
+            border-left: 2px solid rgba(0, 180, 255, 0.15);
+            margin-left: 2px;
+            margin-top: 6px;
+        }
+        .sb-leaf-title {
+            font-size: 12px;
+            font-weight: 500;
+            color: #a8d8f0;
+            margin-bottom: 2px;
+        }
+        .sb-leaf-desc {
+            font-size: 10.5px;
+            color: #5f8aa8;
+            line-height: 1.55;
+        }
+
+        /* 侧边栏开关按钮 */
+        #sb-toggle-btn {
+            position: fixed;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 64px;
+            background: rgba(0, 180, 255, 0.15);
+            border: 1px solid rgba(0, 200, 255, 0.3);
+            border-right: none;
+            border-radius: 8px 0 0 8px;
+            color: #6ac8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 201;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        #sb-toggle-btn:hover { background: rgba(0, 220, 255, 0.3); }
+        #sidebar:not(.hidden) ~ #sb-toggle-btn { display: none; }
+
+        /* 顶部关闭按钮 */
+        #sb-close {
+            position: absolute;
+            top: 14px; right: 14px;
+            width: 24px; height: 24px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.06);
+            color: #6ac8f0;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        #sb-close:hover { background: rgba(255,255,255,0.15); }
+    </style>
+</head>
+<body>
+    <div id="ui-tip">✨ 点击发光球体展开/收回分支 · 按住大球可拖拽整个星系 · 侧边栏同步显示资料 ✨</div>
+
+    <!-- ===== 侧边栏 ===== -->
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <h2>📋 课程资料面板</h2>
+            <p>随 3D 分支展开/收回自动同步 · 点击 ▼ 可反向控制 3D 节点</p>
+            <div id="sb-close" title="收起侧边栏">✕</div>
+        </div>
+        <div id="sidebar-body">
+            <div class="empty-hint" id="sb-empty">
+                🌌 暂无展开的分支<br>点击左侧 3D 星系中的球体<br>即可在此查看课程详情
+            </div>
+        </div>
+    </div>
+    <div id="sb-toggle-btn" title="展开侧边栏">◀</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // ============================================================
+        // 1. 课程数据树
+        // ============================================================
+        const courseTree = {
+            name: "服装与服饰设计", desc: "专业总览", color: 0xffeb3b, size: 2.5, theme: "c-root",
+            detail: "培养具备服装与服饰设计系统知识、创新设计思维与实务技能的高素质应用型人才。毕业后可在纺织服装企业、设计机构、教育科研部门从事鞋服、帽饰、箱包等产品设计开发、技术生产、营销、教学、研究与管理等工作。",
+            children: [
+                {
+                    name: "学科基础课", desc: "必修 21 学分", color: 0x00e5ff, size: 1.2, theme: "c-base",
+                    detail: "学科平台和专业核心课程，全专业必修，共 21 学分。涵盖设计理论、造型基础、服装史论与工艺基础，为后续专业方向课奠定知识与技能底座。",
+                    children: [
+                        { name: "设计概论", desc: "1 学分 · 第1学期", color: 0x00bcd4, size: 0.5, desc2: "介绍设计学科的基本概念、范畴与发展脉络，建立设计思维框架，明确服装与服饰设计在艺术学门类中的定位。" },
+                        { name: "造型基础", desc: "2.5 学分 · 第1学期", color: 0x00bcd4, size: 0.5, desc2: "训练形态观察、提炼与表达能力，涵盖平面构成、立体构成与色彩构成，为服装造型设计提供视觉语言基础。" },
+                        { name: "服装色彩学", desc: "2 学分 · 第1学期", color: 0x00bcd4, size: 0.5, desc2: "系统讲授色彩基本原理、配色法则与流行色分析方法，使学生具备服装色彩设计与搭配的专业判断力。" },
+                        { name: "服装人体素描", desc: "2 学分 · 第1学期", color: 0x00bcd4, size: 0.5, desc2: "掌握服装人体比例、动态与结构表现，将人体与服装有机结合，培养服装效果图与款式图所需的人体表现能力。" },
+                        { name: "中西服装史", desc: "2 学分 · 第2学期", color: 0x00bcd4, size: 0.5, desc2: "梳理中国与西方服装发展的历史脉络、典型形制与文化内涵，为设计创作提供史论参照与文化传承视野。" },
+                        { name: "缝制工艺基础", desc: "1 学分 · 第2学期", color: 0x00bcd4, size: 0.5, desc2: "掌握基础缝纫设备操作、线迹与缝型工艺，完成简单部件的缝制训练，是后续服装工艺与结构课程的操作前提。" }
+                    ]
+                },
+                {
+                    name: "专业核心课", desc: "核心技能", color: 0x4facfe, size: 1.2, theme: "c-core",
+                    detail: "专业核心能力课程，聚焦服装设计的表达、材料认知与设计方法，是连接学科基础与方向课程的关键环节。",
+                    children: [
+                        { name: "服装画技法", desc: "2 学分 · 第2学期", color: 0x2196f3, size: 0.5, desc2: "通过手绘表现技法训练，完成设计构思草图与效果图绘制，掌握人体与服装关系的多样性表现手法，辅助设计创意表达。" },
+                        { name: "服装设计基础", desc: "3 学分 · 第2学期", color: 0x2196f3, size: 0.5, desc2: "学习服装款式设计要素、形式美法则、设计构思方法与风格廓形分类，培养设计思维与创新能力。" },
+                        { name: "服装材料学", desc: "1.5 学分 · 第2学期", color: 0x2196f3, size: 0.5, desc2: "认识服装面辅料的分类、性能与选用原则，理解材料特性对款式造型、工艺实现与穿着体验的影响。" }
+                    ]
+                },
+                {
+                    name: "方向1: 服设", desc: "时尚与服饰设计", color: 0xff4081, size: 1.3, theme: "c-fashion",
+                    detail: "专业方向课（服装设计模块），共 50 学分。覆盖结构设计、立体裁剪、工艺制作、数字化设计与品牌企划全链条，培养独立完成服装从构思到成品的核心能力。",
+                    children: [
+                        { name: "电脑服装设计", desc: "2 学分 · 第3学期", color: 0xf50057, size: 0.5, desc2: "运用 PS/AI 等软件进行服装款式图、效果图与面料图案的数字化表达，衔接手绘设计与计算机辅助设计。" },
+                        { name: "立体裁剪", desc: "基础+创意", color: 0xf50057, size: 0.5, desc2: "在人台上进行衣身、衣领、衣袖、裙装的立体造型操作，将二维设计转化为三维衣片，掌握立裁与平面裁剪结合的能力。" },
+                        { name: "女/男装结构", desc: "制板核心", color: 0xf50057, size: 0.5, desc2: "分析人体体型特征与款式特点，讲授男装/女装结构设计原理、变化规律与制板技巧，完成典型款式的结构绘制与拓展训练。" },
+                        { name: "面料印染工艺★", desc: "1.5 学分 · 创新创业", color: 0xf50057, size: 0.5, desc2: "学习面料印花与染色的基本工艺与创意表现方法，将材料改造纳入设计环节，★ 为创新创业教育内容标识课程。" },
+                        { name: "品牌企划★", desc: "4 学分 · 创新创业", color: 0xf50057, size: 0.5, desc2: "综合运用设计、市场与营销知识，完成品牌定位、产品系列策划与商品企划方案，培养项目开发与品牌运作能力。" },
+                        { name: "服装CAD", desc: "2 学分 · 第4学期", color: 0xf50057, size: 0.5, desc2: "掌握计算机辅助服装结构设计、制板、推板与排料方法，实现设计到工业纸样的数字化转化。" }
+                    ]
+                },
+                {
+                    name: "方向2: 鞋设", desc: "鞋类设计", color: 0xb388ff, size: 1.3, theme: "c-shoes",
+                    detail: "专业方向课（鞋类设计模块），共 50 学分。聚焦鞋靴造型、结构制板、工艺制作与三维建模，培养鞋类产品从设计到成品的全流程能力。",
+                    children: [
+                        { name: "Rhino建模", desc: "2 学分 · 第4学期", color: 0x7c4dff, size: 0.5, desc2: "讲解 Rhino 基础操作与三维建模命令，完成鞋靴曲面建模与渲染输出，为鞋类数字化设计提供核心工具能力。" },
+                        { name: "人体工程学", desc: "2 学分 · 第4学期", color: 0x7c4dff, size: 0.5, desc2: "研究人体形态、运动规律与鞋靴舒适性之间的关系，将工学原理应用于鞋楦设计与结构优化。" },
+                        { name: "男/女式皮鞋", desc: "结构与工艺", color: 0x7c4dff, size: 0.5, desc2: "分别讲授男式、女式皮鞋的结构设计原理、制板方法与制作工艺，完成典型鞋款的样板开发与成品制作训练。" },
+                        { name: "运动鞋工艺★", desc: "2 学分 · 创新创业", color: 0x7c4dff, size: 0.5, desc2: "聚焦运动鞋制作工艺基础，涵盖绷帮、成型等关键工序，★ 为创新创业教育内容标识课程。" },
+                        { name: "Crispin建模", desc: "2 学分 · 第5学期", color: 0x7c4dff, size: 0.5, desc2: "学习 Crispin 鞋样设计与制板软件，完成鞋底、鞋面与整体鞋样的三维构建，衔接后续 3D 成型建模课程。" },
+                        { name: "3D成型建模", desc: "3 学分 · 第6学期", color: 0x7c4dff, size: 0.5, desc2: "Crispin 课程的后续进阶，培养三维形式美设计原则与 3D 鞋样造型能力，丰富数字化艺术表现手段。" }
+                    ]
+                },
+                {
+                    name: "专业任选", desc: "拓展 8 学分", color: 0x9e9e9e, size: 1.0, theme: "c-core",
+                    detail: "专业任选课需修满 8 学分，可在方向课模块外自由选修，用于拓展设计视野、跨方向技能或深化某一专项能力。",
+                    children: [
+                        { name: "形象造型设计★", desc: "2 学分", color: 0x757575, size: 0.5, desc2: "围绕人物整体形象进行发型、妆容、服饰搭配的综合造型设计训练，★ 为创新创业教育内容标识课程。" },
+                        { name: "服饰手工艺★", desc: "2 学分", color: 0x757575, size: 0.5, desc2: "涵盖刺绣、扎染、编结等传统手工艺板块，将手工艺语言融入当代服饰设计，培养工匠精神。" },
+                        { name: "时尚买手", desc: "2 学分", color: 0x757575, size: 0.5, desc2: "学习时尚市场分析、商品采买与组货策略，理解设计端与零售端之间的商业逻辑。" },
+                        { name: "虚拟服装设计", desc: "2 学分", color: 0x757575, size: 0.5, desc2: "运用三维虚拟试衣与数字服装工具进行款式开发与展示，适应服装产业数字化转型趋势。" }
+                    ]
+                },
+                {
+                    name: "集中实践", desc: "实战环节", color: 0xff9800, size: 1.2, theme: "c-practice",
+                    detail: "集中实践教学环节贯穿第 3—8 学期，从认知见习、设计采风到生产实训、毕业设计与毕业实习，完成从课堂到行业实战的过渡。",
+                    children: [
+                        { name: "专业见习", desc: "第3学期 · 1周", color: 0xffb74d, size: 0.5, desc2: "走进服装/鞋类企业或设计机构进行认知性参观与交流，建立对行业生产流程与岗位角色的初步认知。" },
+                        { name: "设计采风", desc: "第5学期 · 2周", color: 0xffb74d, size: 0.5, desc2: "通过实地考察收集设计素材与灵感，完成采风报告与主题设计提案，为专题设计与毕业设计积累素材。" },
+                        { name: "生产实训", desc: "第5/6学期", color: 0xffb74d, size: 0.5, desc2: "在校内实训基地或合作企业完成服装/鞋靴的生产性实训，将结构、工艺与制板知识转化为实际制作能力。" },
+                        { name: "毕业设计", desc: "第7学期 · 8周", color: 0xffb74d, size: 0.5, desc2: "综合运用四年所学，独立完成一套完整的服装/鞋类设计作品，包含调研、构思、设计表达、结构制板与成品制作全流程。" },
+                        { name: "毕业实习", desc: "第8学期 · 12周", color: 0xffb74d, size: 0.5, desc2: "进入企业或设计机构进行顶岗实习，在真实职业环境中检验与提升设计实务能力，为就业衔接做好准备。" }
+                    ]
+                }
+            ]
+        };
+
+        // ============================================================
+        // 2. 初始化 Three.js 环境
+        // ============================================================
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x03040b, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 25);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 50;
+        controls.minDistance = 5;
+
+        // ============================================================
+        // 【新增】星系组：用于统一移动整个星系
+        // ============================================================
+        const galaxyGroup = new THREE.Group();
+        scene.add(galaxyGroup);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const light = new THREE.PointLight(0xffffff, 200, 100);
+        light.position.set(10, 20, 10);
+        scene.add(light); // 灯光不受移动影响
+
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = new Float32Array(3000 * 3);
+        for (let i = 0; i < 3000 * 3; i++) starPos[i] = (Math.random() - 0.5) * 150;
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.1, transparent: true, opacity: 0.6 }));
+        
+        // 【修改】将星空加入星系组
+        galaxyGroup.add(stars); 
+
+        // ============================================================
+        // 3. 3D 节点管理
+        // ============================================================
+        const nodes = [];
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        function createNode(data, parentPos = new THREE.Vector3(0, 0, 0), depth = 0) {
+            const nodeGroup = new THREE.Group();
+            nodeGroup.position.copy(parentPos);
+
+            const geometry = new THREE.SphereGeometry(data.size, 32, 32);
+            const material = new THREE.MeshStandardMaterial({
+                color: data.color,
+                emissive: data.color,
+                emissiveIntensity: 0.4,
+                roughness: 0.2,
+                metalness: 0.8,
+                transparent: true,
+                opacity: 0.9
+            });
+            const sphere = new THREE.Mesh(geometry, material);
+
+            sphere.userData = {
+                isNode: true,
+                data: data,
+                expanded: false,
+                childMeshes: [],
+                childLines: [],
+                group: nodeGroup,
+                labelDiv: null
+            };
+
+            nodeGroup.add(sphere);
+            nodes.push(sphere);
+
+            const labelDiv = document.createElement('div');
+            labelDiv.className = `node-label ${data.theme || 'c-core'}`;
+            labelDiv.innerHTML = `<div class="node-title">${data.name}</div><div class="node-desc">${data.desc || ''}</div>`;
+            const label = new CSS2DObject(labelDiv);
+            label.position.set(0, data.size + 0.15, 0);
+            sphere.add(label);
+            sphere.userData.labelDiv = labelDiv;
+
+            // 【修改】加入星系组
+            galaxyGroup.add(nodeGroup);
+            return sphere;
+        }
+
+        const rootNode = createNode(courseTree);
+
+        // ---------- 展开 / 收回（3D + 侧边栏联动） ----------
+        let sidebarSyncLock = false;
+
+        function toggleNode(sphere, fromSidebar = false) {
+            if (!sphere.userData.data.children || sphere.userData.data.children.length === 0) return;
+
+            const isExpanded = sphere.userData.expanded;
+            const data = sphere.userData.data;
+
+            if (!isExpanded) {
+                // ====== 展开 ======
+                sphere.userData.expanded = true;
+                const parentWorldPos = sphere.getWorldPosition(new THREE.Vector3());
+                const count = data.children.length;
+                const radius = 6 + count * 0.5;
+
+                data.children.forEach((childData, index) => {
+                    const phi = Math.acos(-1 + (2 * index) / count);
+                    const theta = Math.sqrt(count * Math.PI) * phi;
+                    const x = radius * Math.cos(theta) * Math.sin(phi);
+                    const y = radius * Math.sin(theta) * Math.sin(phi);
+                    const z = radius * Math.cos(phi);
+
+                    // 注意这里：如果星系组移动了，getWorldPosition 已经包含了星系组的位移，所以这里算出来的 childPos 是全局坐标，
+                    // 但我们把子球加入的是 galaxyGroup，所以需要抵消 galaxyGroup 的位移，或者直接使用相对坐标。
+                    // 为了简单和稳妥，我们直接把星系组不设偏移，所有坐标都在世界坐标系下计算。
+                    // 如果 galaxiesGroup.position 改变，那么 parentWorldPos 包含了改变，而直接赋给 childSphere 也是相对于 galaxyGroup 的偏移。
+                    // 所以需要减去 galaxyGroup.position。
+                    const groupPos = galaxyGroup.position;
+                    const childLocalPos = new THREE.Vector3(
+                        parentWorldPos.x - groupPos.x + x, 
+                        parentWorldPos.y - groupPos.y + y, 
+                        parentWorldPos.z - groupPos.z + z
+                    );
+                    
+                    const childSphere = createNode(childData, childLocalPos, 1);
+
+                    // 绘制线，使用局部坐标
+                    const parentLocalPos = new THREE.Vector3(
+                        parentWorldPos.x - groupPos.x,
+                        parentWorldPos.y - groupPos.y,
+                        parentWorldPos.z - groupPos.z
+                    );
+                    const points = [parentLocalPos, childLocalPos];
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                    const lineMat = new THREE.LineBasicMaterial({ color: sphere.material.color, transparent: true, opacity: 0.35 });
+                    const line = new THREE.Line(lineGeo, lineMat);
+                    
+                    // 【修改】加入星系组
+                    galaxyGroup.add(line);
+
+                    sphere.userData.childMeshes.push(childSphere);
+                    sphere.userData.childLines.push(line);
+
+                    // 缩放动画
+                    childSphere.scale.set(0, 0, 0);
+                    let scale = 0;
+                    (function scaleUp() {
+                        scale += 0.08;
+                        if (scale >= 1) { childSphere.scale.set(1, 1, 1); return; }
+                        childSphere.scale.set(scale, scale, scale);
+                        requestAnimationFrame(scaleUp);
+                    })();
+                });
+
+                if (!fromSidebar) buildSidebarFor(sphere, true);
+
+            } else {
+                // ====== 收回 ======
+                sphere.userData.expanded = false;
+
+                sphere.userData.childMeshes.forEach(child => {
+                    if (child.userData.expanded) toggleNode(child, true);
+
+                    const idx = nodes.indexOf(child);
+                    if (idx > -1) nodes.splice(idx, 1);
+
+                    if (child.userData.labelDiv) {
+                        child.userData.labelDiv.style.opacity = 0;
+                        setTimeout(() => {
+                            if (child.userData.labelDiv && child.userData.labelDiv.parentNode)
+                                child.userData.labelDiv.parentNode.removeChild(child.userData.labelDiv);
+                        }, 300);
+                    }
+
+                    let s = 1;
+                    (function scaleDown() {
+                        s -= 0.1;
+                        if (s <= 0) { 
+                            // 【修改】从星系组移除
+                            galaxyGroup.remove(child.parent); 
+                            return; 
+                        }
+                        child.scale.set(s, s, s);
+                        requestAnimationFrame(scaleDown);
+                    })();
+                });
+
+                sphere.userData.childLines.forEach(line => {
+                    // 【修改】从星系组移除
+                    galaxyGroup.remove(line);
+                    line.geometry.dispose();
+                    line.material.dispose();
+                });
+
+                sphere.userData.childMeshes = [];
+                sphere.userData.childLines = [];
+
+                if (!fromSidebar) buildSidebarFor(sphere, false);
+            }
+        }
+
+        // ============================================================
+        // 4. 侧边栏逻辑
+        // ============================================================
+        const sidebar = document.getElementById('sidebar');
+        const sidebarBody = document.getElementById('sidebar-body');
+        const sbEmpty = document.getElementById('sb-empty');
+        const sbToggleBtn = document.getElementById('sb-toggle-btn');
+        const sbClose = document.getElementById('sb-close');
+
+        sbToggleBtn.addEventListener('click', () => sidebar.classList.remove('hidden'));
+        sbClose.addEventListener('click', () => sidebar.classList.add('hidden'));
+
+        function findSidebarNode(key) {
+            return sidebarBody.querySelector(`.sb-node[data-key="${key}"]`);
+        }
+
+        function buildSidebarFor(sphere, expand) {
+            if (sidebarSyncLock) return;
+            sidebarSyncLock = true;
+
+            const key = sphere.userData.data.name + '|' + (sphere.userData.data.desc || '');
+            let nodeEl = findSidebarNode(key);
+
+            if (expand) {
+                sbEmpty.style.display = 'none';
+
+                if (!nodeEl) {
+                    nodeEl = createSidebarNode(sphere);
+                    const depth = getDepth(sphere);
+                    if (depth === 1) {
+                        sidebarBody.appendChild(nodeEl);
+                    } else {
+                        const parentSphere = findParentSphere(sphere);
+                        if (parentSphere) {
+                            const parentKey = parentSphere.userData.data.name + '|' + (parentSphere.userData.data.desc || '');
+                            const parentEl = findSidebarNode(parentKey);
+                            if (parentEl) {
+                                let container = parentEl.querySelector('.sb-detail');
+                                if (!container) {
+                                    container = document.createElement('div');
+                                    container.className = 'sb-detail';
+                                    parentEl.appendChild(container);
+                                }
+                                container.appendChild(nodeEl);
+                            }
+                        }
+                    }
+                }
+
+                nodeEl.classList.add('expanded');
+                nodeEl.classList.add('active-parent');
+
+                const toggle = nodeEl.querySelector('.sb-toggle');
+                if (toggle) toggle.textContent = '▼';
+
+                if (sphere.userData.childMeshes.length > 0) {
+                    sphere.userData.childMeshes.forEach(child => {
+                        if (child.userData.expanded) buildSidebarFor(child, true);
+                    });
+                }
+
+            } else {
+                if (nodeEl) {
+                    nodeEl.classList.remove('expanded');
+                    nodeEl.classList.remove('active-parent');
+                    const toggle = nodeEl.querySelector('.sb-toggle');
+                    if (toggle) toggle.textContent = '▶';
+                }
+
+                requestAnimationFrame(() => {
+                    const anyExpanded = sidebarBody.querySelector('.sb-node.active-parent');
+                    if (!anyExpanded) {
+                        sidebarBody.innerHTML = '';
+                        sidebarBody.appendChild(sbEmpty);
+                        sbEmpty.style.display = 'block';
+                    }
+                });
+            }
+
+            setTimeout(() => { sidebarSyncLock = false; }, 50);
+        }
+
+        function getDepth(sphere) {
+            let d = 0, s = sphere;
+            while (s.parent && !s.userData.isRoot) {
+                let p = null;
+                nodes.forEach(n => {
+                    if (n.userData.childMeshes.includes(s)) p = n;
+                });
+                if (!p) break;
+                s = p;
+                d++;
+            }
+            return d;
+        }
+
+        function findParentSphere(sphere) {
+            for (const n of nodes) {
+                if (n.userData.childMeshes.includes(sphere)) return n;
+            }
+            return null;
+        }
+
+        function createSidebarNode(sphere) {
+            const data = sphere.userData.data;
+            const el = document.createElement('div');
+            el.className = 'sb-node';
+            el.dataset.key = data.name + '|' + (data.desc || '');
+
+            const row = document.createElement('div');
+            row.className = 'sb-row';
+
+            const dot = document.createElement('span');
+            dot.className = 'sb-dot';
+            dot.style.background = '#' + data.color.toString(16).padStart(6, '0');
+            dot.style.boxShadow = '0 0 6px #' + data.color.toString(16).padStart(6, '0');
+
+            const name = document.createElement('span');
+            name.className = 'sb-name';
+            name.textContent = data.name;
+
+            const credit = document.createElement('span');
+            credit.className = 'sb-credit';
+            credit.textContent = (data.desc || '').replace(/·/g, '').trim();
+
+            const toggle = document.createElement('span');
+            toggle.className = 'sb-toggle';
+            toggle.textContent = '▼';
+
+            row.appendChild(dot);
+            row.appendChild(name);
+            row.appendChild(credit);
+            row.appendChild(toggle);
+            el.appendChild(row);
+
+            const detail = document.createElement('div');
+            detail.className = 'sb-detail';
+
+            if (data.detail) {
+                const desc = document.createElement('div');
+                desc.className = 'sb-desc';
+                desc.textContent = data.detail;
+                detail.appendChild(desc);
+            }
+
+            if (data.children) {
+                data.children.forEach(child => {
+                    const leaf = document.createElement('div');
+                    leaf.className = 'sb-leaf';
+                    leaf.innerHTML = `
+                        <div class="sb-leaf-title">▸ ${child.name}
+                            <span style="font-weight:400;font-size:10px;color:#5a8da8;margin-left:6px;">${child.desc || ''}</span>
+                        </div>
+                        <div class="sb-leaf-desc">${child.desc2 || ''}</div>
+                    `;
+                    detail.appendChild(leaf);
+                });
+            }
+
+            el.appendChild(detail);
+
+            row.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const targetSphere = nodes.find(n => {
+                    const d = n.userData.data;
+                    return d.name === data.name && (d.desc || '') === (data.desc || '');
+                });
+                if (!targetSphere) return;
+                if (!targetSphere.userData.data.children || targetSphere.userData.data.children.length === 0) return;
+
+                sidebarSyncLock = true;
+                toggleNode(targetSphere, true);
+                sidebarSyncLock = false;
+            });
+
+            return el;
+        }
+
+        // ============================================================
+        // 5. 鼠标事件：点击展开/收回 + 拖拽星系
+        // ============================================================
+        let mouseDownPos = { x: 0, y: 0 };
+        // 新增：拖拽相关变量
+        let isDraggingRoot = false;
+        let lastDragMouseX = 0;
+        let lastDragMouseY = 0;
+
+        renderer.domElement.addEventListener('mousedown', (e) => {
+            mouseDownPos = { x: e.clientX, y: e.clientY };
+            
+            // 检测按下时是否点中了根节点大球
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(nodes);
+            
+            if (intersects.length > 0 && intersects[0].object === rootNode) {
+                isDraggingRoot = true;
+                lastDragMouseX = e.clientX;
+                lastDragMouseY = e.clientY;
+                controls.enabled = false; // 拖拽时禁用相机视角旋转
+                document.body.style.cursor = 'grabbing';
+            }
+        });
+
+        renderer.domElement.addEventListener('mouseup', (e) => {
+            // 结束拖拽星系
+            if (isDraggingRoot) {
+                isDraggingRoot = false;
+                controls.enabled = true;
+                document.body.style.cursor = 'default';
+            }
+
+            const dx = e.clientX - mouseDownPos.x;
+            const dy = e.clientY - mouseDownPos.y;
+            if (Math.sqrt(dx * dx + dy * dy) > 5) return; // 移动距离过大说明是拖拽，不触发点击
+
+            // 点击判定
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(nodes);
+
+            if (intersects.length > 0) {
+                toggleNode(intersects[0].object, false);
+            }
+        });
+
+        // 新增：处理星系拖拽的动画和鼠标悬停
+        window.addEventListener('mousemove', (event) => {
+            // 如果正在拖拽大球
+            if (isDraggingRoot) {
+                const deltaX = event.clientX - lastDragMouseX;
+                const deltaY = event.clientY - lastDragMouseY;
+
+                // 动态计算比例，将屏幕像素位移映射到 3D 世界坐标位移
+                const distance = camera.position.distanceTo(galaxyGroup.position); 
+                const vFOV = camera.fov * Math.PI / 180;
+                const viewHeight = 2 * Math.tan(vFOV / 2) * distance;
+                const viewWidth = viewHeight * camera.aspect;
+                const pixelToWorldX = viewWidth / window.innerWidth;
+                const pixelToWorldY = viewHeight / window.innerHeight;
+
+                // 获取相机当前朝向的右向量和上向量
+                const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+                const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+
+                // 将鼠标拖拽映射到 3D 空间，并平移整个星系组
+                galaxyGroup.position.addScaledVector(right, deltaX * pixelToWorldX);
+                galaxyGroup.position.addScaledVector(up, -deltaY * pixelToWorldY);
+
+                lastDragMouseX = event.clientX;
+                lastDragMouseY = event.clientY;
+                return; // 拖拽时阻断后续的射线检测
+            }
+
+            if (event.buttons > 0) return; // 拖拽相机视角时也不检测悬停
+
+            // 悬停高亮逻辑
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(nodes);
+            if (intersects.length > 0) {
+                document.body.style.cursor = 'pointer';
+                intersects[0].object.material.emissiveIntensity = 1.0;
+            } else {
+                document.body.style.cursor = 'default';
+            }
+        });
+
+        // ============================================================
+        // 6. 动画循环
+        // ============================================================
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            nodes.forEach((node, i) => {
+                node.material.emissiveIntensity = 0.4 + Math.sin(time * 3 + i) * 0.15;
+                if (!node.userData.expanded) {
+                    const s = 1 + Math.sin(time * 3 + i) * 0.02;
+                    node.scale.set(s, s, s);
+                }
+            });
+
+            stars.rotation.y = time * 0.02;
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+
+        animate();
+
+        // ============================================================
+        // 7. 自适应
+        // ============================================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
