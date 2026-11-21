@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>跳一跳</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{
+    width:100%;height:100%;overflow:hidden;background:#12121f;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:none;overscroll-behavior:none;
+  }
+  #game{
+    position:absolute;left:50%;top:0;transform:translateX(-50%);
+    display:block;width:min(100vw,480px);height:100%;cursor:pointer;
+  }
+  #hud{
+    position:absolute;top:0;left:50%;transform:translateX(-50%);
+    width:min(100vw,480px);height:100%;pointer-events:none;z-index:3;
+  }
+  #score{
+    position:absolute;top:calc(24px + env(safe-area-inset-top));left:26px;
+    font-size:52px;font-weight:800;color:#fff;letter-spacing:-.04em;
+    text-shadow:0 4px 30px rgba(94,234,212,.35);line-height:1;
+  }
+  #combo{
+    position:absolute;top:calc(84px + env(safe-area-inset-top));left:28px;
+    font-size:15px;font-weight:700;color:#5eead4;opacity:0;transition:.3s;
+  }
+  #combo.on{opacity:1}
+  #tip{
+    position:absolute;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));
+    transform:translateX(-50%);font-size:14px;color:rgba(255,255,255,.5);
+    white-space:nowrap;transition:opacity .4s;
+  }
+  #tip.hide{opacity:0}
+  #overlay{
+    position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;
+    background:rgba(10,10,20,.78);backdrop-filter:blur(10px);
+    opacity:0;pointer-events:none;transition:opacity .35s;
+  }
+  #overlay.show{opacity:1;pointer-events:auto}
+  .panel{
+    width:min(78vw,320px);padding:36px 28px 30px;border-radius:26px;text-align:center;
+    background:linear-gradient(165deg,rgba(40,40,64,.96),rgba(22,22,38,.96));
+    border:1px solid rgba(255,255,255,.1);
+    box-shadow:0 30px 80px -20px rgba(0,0,0,.8);
+    transform:scale(.9);transition:transform .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  #overlay.show .panel{transform:scale(1)}
+  .panel .title{font-size:15px;color:rgba(255,255,255,.45);letter-spacing:.12em;margin-bottom:14px}
+  .panel .fs{font-size:64px;font-weight:800;line-height:1;letter-spacing:-.04em;
+    background:linear-gradient(100deg,#5eead4,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .panel .best{margin-top:12px;font-size:14px;color:rgba(255,255,255,.4)}
+  #restart{
+    margin-top:28px;width:100%;padding:15px;border:0;border-radius:14px;cursor:pointer;
+    font-size:16px;font-weight:700;color:#0b1020;
+    background:linear-gradient(100deg,#5eead4,#7dd3fc);
+    box-shadow:0 12px 34px -10px rgba(94,234,212,.7);
+    transition:.2s;font-family:inherit;
+  }
+  #restart:active{transform:scale(.97)}
+  .float{
+    position:fixed;left:50%;top:36%;transform:translate(-50%,0);
+    font-size:26px;font-weight:800;color:#5eead4;pointer-events:none;z-index:5;
+    text-shadow:0 2px 22px rgba(94,234,212,.7);
+    animation:floatUp .9s ease-out forwards;
+  }
+  @keyframes floatUp{
+    0%{opacity:0;transform:translate(-50%,18px) scale(.8)}
+    22%{opacity:1;transform:translate(-50%,0) scale(1.12)}
+    100%{opacity:0;transform:translate(-50%,-64px) scale(1)}
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="score">0</div>
+  <div id="combo"></div>
+  <div id="tip">按住屏幕蓄力，松开跳跃</div>
+</div>
+<div id="overlay">
+  <div class="panel">
+    <div class="title">游 戏 结 束</div>
+    <div class="fs" id="final-score">0</div>
+    <div class="best" id="best">最高分 0</div>
+    <button id="restart">再来一局</button>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const comboEl = document.getElementById('combo');
+const tipEl = document.getElementById('tip');
+const overlay = document.getElementById('overlay');
+const finalScoreEl = document.getElementById('final-score');
+const bestEl = document.getElementById('best');
+const restartBtn = document.getElementById('restart');
+
+let W = 0, H = 0, dpr = 1;
+
+/* 方块尺寸（CSS 像素） */
+const BW = 60;      // 顶面半宽
+const BH = 30;      // 顶面半高
+const DEPTH = 24;   // 方块厚度
+
+const MAX_HOLD = 1100;  // 蓄满力所需毫秒
+const MIN_DIST = 46;    // 最小跳跃水平距离
+const MAX_DIST = 238;   // 最大跳跃水平距离
+
+const state = {
+  blocks: [],
+  cur: 0,
+  phase: 'idle',      // idle | charging | jumping | over
+  power: 0,
+  holdStart: 0,
+  jump: null,
+  player: { x: 0, y: 0, hop: 0, rot: 0, squash: 0, vy: 0 },
+  cam: { x: 0, y: 0 },
+  score: 0,
+  combo: 0,
+  best: +(localStorage.getItem('jump_best') || 0),
+  stars: [],
+  dust: [],
+  firstJump: false
+};
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+
+/* ---------- 尺寸 ---------- */
+function resize(){
+  const r = canvas.getBoundingClientRect();
+  W = r.width;
+  H = r.height;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if(!state.stars.length){
+    for(let i = 0; i < 46; i++){
+      state.stars.push({
+        x: Math.random(), y: Math.random(),
+        r: rand(0.6, 1.9), a: rand(0.15, 0.55), ph: rand(0, 6.28)
+      });
+    }
+  }
+}
+
+/* ---------- 游戏流程 ---------- */
+function reset(){
+  state.blocks = [];
+  state.cur = 0;
+  state.phase = 'idle';
+  state.power = 0;
+  state.jump = null;
+  state.score = 0;
+  state.combo = 0;
+  state.dust = [];
+  state.firstJump = false;
+
+  const b0 = { x: 0, y: 0, hue: rand(0, 360) };
+  state.blocks.push(b0);
+  addBlock();
+
+  state.player.x = b0.x;
+  state.player.y = b0.y;
+  state.player.hop = 0;
+  state.player.rot = 0;
+  state.player.squash = 0;
+  state.player.vy = 0;
+
+  state.cam.x = b0.x - W / 2;
+  state.cam.y = b0.y - H * 0.66;
+
+  scoreEl.textContent = '0';
+  comboEl.classList.remove('on');
+  tipEl.classList.remove('hide');
+  overlay.classList.remove('show');
+}
+
+function addBlock(){
+  const last = state.blocks[state.blocks.length - 1];
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const d = rand(112, 194);
+  state.blocks.push({
+    x: last.x + dir * d,
+    y: last.y - d * 0.5,
+    hue: (last.hue + rand(55, 150)) % 360
+  });
+
+  // 回收远处旧方块，避免无限增长
+  if(state.blocks.length > 34){
+    const n = state.blocks.length - 26;
+    state.blocks.splice(0, n);
+    state.cur -= n;
+  }
+}
+
+function startJump(power){
+  const s = state;
+  const curB = s.blocks[s.cur];
+  const nextB = s.blocks[s.cur + 1];
+  if(!nextB) return;
+
+  const dir = nextB.x > curB.x ? 1 : -1;
+  const dist = MIN_DIST + power * (MAX_DIST - MIN_DIST);
+
+  const from = { x: s.player.x, y: s.player.y };
+  const to = { x: from.x + dir * dist, y: from.y - dist * 0.5 };
+
+  s.jump = {
+    from, to,
+    t: 0,
+    dur: 300 + dist * 0.62,
+    height: 46 + dist * 0.34
+  };
+  s.phase = 'jumping';
+  s.player.squash = 0;
+
+  if(!s.firstJump){
+    s.firstJump = true;
+    tipEl.classList.add('hide');
+  }
+}
+
+function land(){
+  const s = state;
+  const target = s.blocks[s.cur + 1];
+  if(!target){ s.phase = 'idle'; return; }
+
+  const dx = Math.abs(s.player.x - target.x) / BW;
+  const dy = Math.abs(s.player.y - target.y) / BH;
+  const d = dx + dy;
+
+  if(d <= 1.05){
+    // 成功落地
+    s.cur++;
+    s.score++;
+    const perfect = d < 0.26;
+
+    if(perfect){
+      s.score++;
+      s.combo++;
+      comboEl.textContent = '完美 ×' + s.combo;
+      comboEl.classList.add('on');
+      showFloat(s.combo > 1 ? '完美 +2 ×' + s.combo : '完美 +2');
+      burst(target.x, target.y, target.hue);
+    } else {
+      s.combo = 0;
+      comboEl.classList.remove('on');
+    }
+
+    scoreEl.textContent = s.score;
+    addBlock();
+    s.phase = 'idle';
+  } else {
+    // 掉落
+    s.phase = 'over';
+    s.player.vy = 0.1;
+    s.combo = 0;
+    comboEl.classList.remove('on');
+    gameOver();
+  }
+}
+
+function gameOver(){
+  const s = state;
+  if(s.score > s.best){
+    s.best = s.score;
+    try{ localStorage.setItem('jump_best', s.best); }catch(e){}
+  }
+  setTimeout(() => {
+    if(s.phase !== 'over') return;
+    finalScoreEl.textContent = s.score;
+    bestEl.textContent = '最高分 ' + s.best;
+    overlay.classList.add('show');
+  }, 760);
+}
+
+function showFloat(text){
+  const el = document.createElement('div');
+  el.className = 'float';
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+
+function burst(wx, wy, hue){
+  for(let i = 0; i < 14; i++){
+    const a = Math.random() * Math.PI * 2;
+    const sp = rand(1.2, 4.2);
+    state.dust.push({
+      x: wx, y: wy,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp * 0.5 - rand(1, 3),
+      life: 1,
+      hue: hue + rand(-25, 25),
+      size: rand(2, 5)
+    });
+  }
+}
+
+/* ---------- 更新 ---------- */
+function update(dt, now){
+  const s = state;
+
+  if(s.phase === 'charging'){
+    s.power = clamp((now - s.holdStart) / MAX_HOLD, 0, 1);
+    s.player.squash = s.power;
+  } else if(s.phase === 'idle'){
+    s.player.squash += (0 - s.player.squash) * Math.min(1, dt * 0.018);
+  }
+
+  if(s.phase === 'jumping'){
+    const j = s.jump;
+    j.t += dt / j.dur;
+    if(j.t >= 1){
+      s.player.x = j.to.x;
+      s.player.y = j.to.y;
+      s.player.hop = 0;
+      s.player.rot = 0;
+      land();
+    } else {
+      const t = j.t;
+      s.player.x = lerp(j.from.x, j.to.x, t);
+      s.player.y = lerp(j.from.y, j.to.y, t);
+      s.player.hop = Math.sin(Math.PI * t) * j.height;
+      s.player.rot = t * Math.PI * 2;
+    }
+  }
+
+  if(s.phase === 'over'){
+    s.player.vy += dt * 0.0016;
+    s.player.hop -= s.player.vy * dt;
+    s.player.rot += dt * 0.009;
+  }
+
+  // 相机平滑跟随
+  const follow = s.phase === 'jumping' ? 0.05 : 0.1;
+  const tx = s.player.x - W / 2;
+  const ty = s.player.y - H * 0.66;
+  s.cam.x += (tx - s.cam.x) * follow;
+  s.cam.y += (ty - s.cam.y) * follow;
+
+  // 粒子
+  for(let i = s.dust.length - 1; i >= 0; i--){
+    const p = s.dust[i];
+    p.x += p.vx * dt * 0.06;
+    p.y += p.vy * dt * 0.06;
+    p.vy += dt * 0.004;
+    p.life -= dt * 0.0016;
+    if(p.life <= 0) s.dust.splice(i, 1);
+  }
+}
+
+/* ---------- 绘制 ---------- */
+function render(now){
+  // 背景
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1d1d33');
+  bg.addColorStop(0.55, '#15152a');
+  bg.addColorStop(1, '#0d0d18');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // 星点
+  for(const st of state.stars){
+    const a = st.a * (0.55 + 0.45 * Math.sin(now * 0.0016 + st.ph));
+    ctx.beginPath();
+    ctx.arc(st.x * W, st.y * H, st.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(190,205,255,' + a.toFixed(3) + ')';
+    ctx.fill();
+  }
+
+  // 顶部柔光
+  const glow = ctx.createRadialGradient(W * 0.5, -40, 0, W * 0.5, -40, H * 0.62);
+  glow.addColorStop(0, 'rgba(110,90,255,0.16)');
+  glow.addColorStop(1, 'rgba(110,90,255,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // 方块（远 -> 近）
+  const sorted = state.blocks.slice().sort((a, b) => a.y - b.y);
+  for(const b of sorted) drawBlock(b);
+
+  // 粒子
+  for(const p of state.dust){
+    const px = p.x - state.cam.x;
+    const py = p.y - state.cam.y;
+    ctx.globalAlpha = clamp(p.life, 0, 1) * 0.9;
+    ctx.beginPath();
+    ctx.arc(px, py, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = 'hsl(' + p.hue + ',80%,68%)';
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 玩家
+  drawPlayer();
+
+  // 力量条
+  if(state.phase === 'charging') drawPowerBar();
+}
+
+function drawBlock(b){
+  const x = b.x - state.cam.x;
+  const y = b.y - state.cam.y;
+
+  if(x < -220 || x > W + 220 || y < -320 || y > H + 320) return;
+
+  const hue = b.hue;
+  const cTop = 'hsl(' + hue + ',72%,63%)';
+  const cLeft = 'hsl(' + hue + ',62%,39%)';
+  const cRight = 'hsl(' + hue + ',64%,50%)';
+
+  const topP = { x: x, y: y - BH };
+  const rightP = { x: x + BW, y: y };
+  const botP = { x: x, y: y + BH };
+  const leftP = { x: x - BW, y: y };
+
+  // 地面投影
+  ctx.beginPath();
+  ctx.ellipse(x, y + BH + DEPTH * 0.35, BW * 0.92, BH * 0.55, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fill();
+
+  // 左面
+  ctx.beginPath();
+  ctx.moveTo(leftP.x, leftP.y);
+  ctx.lineTo(botP.x, botP.y);
+  ctx.lineTo(botP.x, botP.y + DEPTH);
+  ctx.lineTo(leftP.x, leftP.y + DEPTH);
+  ctx.closePath();
+  ctx.fillStyle = cLeft;
+  ctx.fill();
+
+  // 右面
+  ctx.beginPath();
+  ctx.moveTo(rightP.x, rightP.y);
+  ctx.lineTo(botP.x, botP.y);
+  ctx.lineTo(botP.x, botP.y + DEPTH);
+  ctx.lineTo(rightP.x, rightP.y + DEPTH);
+  ctx.closePath();
+  ctx.fillStyle = cRight;
+  ctx.fill();
+
+  // 顶面
+  ctx.beginPath();
+  ctx.moveTo(topP.x, topP.y);
+  ctx.lineTo(rightP.x, rightP.y);
+  ctx.lineTo(botP.x, botP.y);
+  ctx.lineTo(leftP.x, leftP.y);
+  ctx.closePath();
+  ctx.fillStyle = cTop;
+  ctx.fill();
+
+  // 顶面高光
+  ctx.beginPath();
+  ctx.moveTo(topP.x, topP.y);
+  ctx.lineTo(rightP.x, rightP.y);
+  ctx.lineTo(x + BW * 0.1, y + BH * 0.1);
+  ctx.lineTo(x - BW * 0.1, y - BH * 0.1);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  ctx.fill();
+}
+
+function drawPlayer(){
+  const p = state.player;
+  const x = p.x - state.cam.x;
+  const y = p.y - state.cam.y - p.hop;
+
+  const squash = p.squash;
+  const bodyW = 15 * (1 + 0.34 * squash);
+  const bodyH = 40 * (1 - 0.36 * squash);
+
+  // 影子
+  const shY = p.y - state.cam.y;
+  const shk = clamp(1 - (p.hop || 0) / 260, 0.25, 1);
+  ctx.beginPath();
+  ctx.ellipse(x, shY + BH * 0.06, 17 * shk, 8 * shk, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,' + (0.26 * shk).toFixed(3) + ')';
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(x, y - bodyH * 0.42);
+  ctx.rotate(p.rot || 0);
+  ctx.translate(0, bodyH * 0.42);
+
+  // 身体
+  const grad = ctx.createLinearGradient(-bodyW, 0, bodyW, 0);
+  grad.addColorStop(0, '#b9b9d6');
+  grad.addColorStop(0.45, '#ffffff');
+  grad.addColorStop(1, '#c3c3de');
+
+  ctx.beginPath();
+  ctx.moveTo(-bodyW, 0);
+  ctx.quadraticCurveTo(-bodyW * 0.72, -bodyH * 0.5, -bodyW * 0.5, -bodyH * 0.86);
+  ctx.lineTo(bodyW * 0.5, -bodyH * 0.86);
+  ctx.quadraticCurveTo(bodyW * 0.72, -bodyH * 0.5, bodyW, 0);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 底部椭圆
+  ctx.beginPath();
+  ctx.ellipse(0, 0, bodyW, bodyW * 0.42, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#dcdcf0';
+  ctx.fill();
+
+  // 头部
+  ctx.beginPath();
+  ctx.arc(0, -bodyH * 0.94, bodyW * 0.52, 0, Math.PI * 2);
+  const hg = ctx.createRadialGradient(-bodyW * 0.2, -bodyH * 0.94 - bodyW * 0.2, 0, 0, -bodyH * 0.94, bodyW * 0.6);
+  hg.addColorStop(0, '#ffffff');
+  hg.addColorStop(1, '#d0d0e6');
+  ctx.fillStyle = hg;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawPowerBar(){
+  const w = 168, h = 6;
+  const x = (W - w) / 2;
+  const y = H - 52;
+
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x, y, w, h, 3) : ctx.rect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.11)';
+  ctx.fill();
+
+  const p = state.power;
+  if(p > 0.005){
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, '#5eead4');
+    g.addColorStop(0.55, '#7dd3fc');
+    g.addColorStop(1, '#f472b6');
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(x, y, w * p, h, 3);
+    else ctx.rect(x, y, w * p, h);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+}
+
+/* ---------- 主循环 ---------- */
+let lastTs = 0;
+function loop(ts){
+  const dt = lastTs ? Math.min(48, ts - lastTs) : 16;
+  lastTs = ts;
+  update(dt, ts);
+  render(ts);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 交互 ---------- */
+function onDown(e){
+  if(state.phase !== 'idle') return;
+  if(e.cancelable) e.preventDefault();
+  state.phase = 'charging';
+  state.holdStart = performance.now();
+  state.power = 0;
+}
+
+function onUp(e){
+  if(state.phase !== 'charging') return;
+  const p = clamp((performance.now() - state.holdStart) / MAX_HOLD, 0, 1);
+  state.power = p;
+  startJump(p);
+}
+
+canvas.addEventListener('pointerdown', onDown);
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', onUp);
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+// 键盘（空格）
+window.addEventListener('keydown', e => {
+  if(e.code === 'Space' && !e.repeat) onDown(e);
+});
+window.addEventListener('keyup', e => {
+  if(e.code === 'Space') onUp(e);
+});
+
+restartBtn.addEventListener('click', () => {
+  overlay.classList.remove('show');
+  reset();
+});
+
+window.addEventListener('resize', () => {
+  resize();
+  state.cam.x = state.player.x - W / 2;
+  state.cam.y = state.player.y - H * 0.66;
+});
+
+/* ---------- 启动 ---------- */
+resize();
+reset();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
